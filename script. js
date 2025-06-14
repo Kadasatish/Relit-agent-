@@ -1,0 +1,302 @@
+const orderBtn = document.getElementById('orderBtn');
+const qrContainer = document.getElementById('qrContainer');
+const pressContainer = document.getElementById('pressContainer');
+const pressBtn = document.getElementById('pressBtn');
+
+let recognition;
+let micActive = false;
+let wakeLock = null;
+let videoTrack = null;
+let isMotionDetectionActive = true;
+let cameraStream = null;
+let lastMotionTime = 0;
+let isAppVisible = true;
+let motionIntervalId = null;
+let videoElement = null;
+let flashDuration = 20000; // Default flash duration (20 seconds)
+
+// Request screen wake lock
+async function lockScreen() {
+  try {
+    if (!wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log('Screen wake lock activated');
+      wakeLock.addEventListener('release', () => {
+        console.log('Screen wake lock released');
+        wakeLock = null;
+      });
+    }
+  } catch (err) {
+    console.error('Failed to acquire wake lock:', err);
+  }
+}
+
+// Release wake lock
+async function releaseWakeLock() {
+  if (wakeLock !== null) {
+    await wakeLock.release();
+    wakeLock = null;
+    console.log('Screen wake lock released');
+  }
+}
+
+// Prevent unwanted interactions
+window.addEventListener('keydown', (event) => {
+  event.preventDefault();
+  console.log('Key press prevented:', event.key);
+});
+
+window.addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+});
+
+document.addEventListener('touchstart', (event) => {
+  if (event.touches.length > 1) {
+    event.preventDefault();
+  }
+}, { passive: false });
+
+document.addEventListener('touchmove', (event) => {
+  event.preventDefault();
+}, { passive: false });
+
+// Speech recognition
+function startMic() {
+  if (!isAppVisible) return;
+  recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+  recognition.lang = 'ta-IN';
+  recognition.continuous = true;
+  micActive = true;
+
+  recognition.onresult = (event) => {
+    const speech = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+    console.log("Heard:", speech);
+
+    const tamilRegex = /[\u0B80-\u0BFF]/;
+    if (tamilRegex.test(speech)) {
+      if (speech.includes("ஒரு") || speech.includes("ஒன்று")) {
+        flashDuration = 20000; // 20 seconds for "one rupee"
+        speakText("మీ చెల్లింపు విజయవంతమైంది. గ్లాస్ పెట్టి బటన్ నొక్కండి.");
+      } else if (speech.includes("ஐந்து")) {
+        flashDuration = 60000; // 60 seconds for "five rupees"
+        speakText("మీ చెల్లింపు విజయవంతమైంది. గ్లాస్ పెట్టి బటన్ నొక్కండి.");
+      }
+
+      if (flashDuration > 0) {
+        recognition.stop();
+        micActive = false;
+        qrContainer.style.display = "none";
+        pressContainer.style.display = "block";
+      }
+    }
+  };
+
+  recognition.onend = () => {
+    if (micActive && isAppVisible) recognition.start();
+  };
+
+  recognition.start();
+}
+
+// Speech synthesis
+function speakText(text) {
+  if (!isAppVisible) return;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-IN";
+  window.speechSynthesis.speak(utterance);
+}
+
+// Control flashlight
+async function controlFlashlight(state) {
+  try {
+    if (!videoTrack) {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', torch: state === 'on' }
+      });
+      videoTrack = stream.getVideoTracks()[0];
+    } else {
+      await videoTrack.applyConstraints({
+        advanced: [{ torch: state === 'on' }]
+      });
+    }
+    console.log(`Flashlight ${state}`);
+  } catch (err) {
+    console.error('Flashlight error:', err);
+    if (videoTrack) {
+      videoTrack.stop();
+      videoTrack = null;
+    }
+  }
+}
+
+// Stop flashlight
+function stopFlashlight() {
+  if (videoTrack) {
+    videoTrack.stop();
+    videoTrack = null;
+    console.log('Flashlight stopped');
+  }
+}
+
+// Stop camera
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => track.stop());
+    cameraStream = null;
+    console.log('Camera stopped');
+  }
+  if (motionIntervalId) {
+    clearInterval(motionIntervalId);
+    motionIntervalId = null;
+  }
+  videoElement = null;
+}
+
+// Motion Detection
+async function setupCamera() {
+  videoElement = document.createElement('video');
+  videoElement.width = 80;
+  videoElement.height = 60;
+  videoElement.style.display = 'none';
+  document.body.appendChild(videoElement);
+  cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+  videoElement.srcObject = cameraStream;
+  videoElement.play();
+  return videoElement;
+}
+
+async function startMotionDetection() {
+  if (!isMotionDetectionActive || !isAppVisible || videoElement) return;
+  try {
+    videoElement = await setupCamera();
+    lastMotionTime = Date.now();
+    const canvas = document.createElement('canvas');
+    canvas.width = videoElement.width;
+    canvas.height = videoElement.height;
+    const ctx = canvas.getContext('2d');
+    let lastImageData = null;
+    let lastAlert = 0;
+
+    motionIntervalId = setInterval(() => {
+      if (!isMotionDetectionActive || !isAppVisible || !videoElement) {
+        stopCamera();
+        return;
+      }
+      ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      if (lastImageData) {
+        let diff = 0;
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          diff += Math.abs(imageData.data[i] - lastImageData.data[i]) +
+                  Math.abs(imageData.data[i + 1] - lastImageData.data[i + 1]) +
+                  Math.abs(imageData.data[i + 2] - lastImageData.data[i + 2]);
+        }
+        const threshold = 100000;
+        if (diff > threshold && Date.now() - lastAlert > 10000) {
+          speakText("మీకు డ్రింక్ కావాలా? డ్రింక్ కావాలి అంటే స్క్రీన్ మీద ఉన్న ఆర్డర్ డ్రింక్ బటన్‌ను ప్రెస్ చేయండి.");
+          lastAlert = Date.now();
+          lastMotionTime = Date.now();
+        }
+      }
+      lastImageData = imageData;
+
+      if (Date.now() - lastMotionTime > 30000) {
+        stopCamera();
+        console.log('Camera timed out due to no motion');
+      }
+    }, 2000);
+  } catch (err) {
+    console.error('Motion detection error:', err);
+    stopCamera();
+  }
+}
+
+async function detectMotion() {
+  try {
+    window.addEventListener('deviceproximity', async (event) => {
+      if (!isMotionDetectionActive || !isAppVisible) return;
+      const distance = event.value;
+      console.log('Proximity distance:', distance);
+
+      if (distance < 50 && !videoElement) {
+        await startMotionDetection();
+      } else if (distance >= 50 && videoElement) {
+        stopCamera();
+        console.log('Camera stopped due to far proximity');
+      }
+    });
+  } catch (err) {
+    console.error('Motion detection error:', err);
+  }
+}
+
+// Handle visibility changes
+isAppVisible = document.visibilityState === 'visible';
+document.addEventListener('visibilitychange', () => {
+  isAppVisible = document.visibilityState === 'visible';
+  console.log('App visibility:', isAppVisible ? 'visible' : 'hidden');
+  if (!isAppVisible) {
+    stopCamera();
+    if (micActive) {
+      recognition.stop();
+      micActive = false;
+    }
+  } else if (isMotionDetectionActive) {
+    startMotionDetection();
+    if (qrContainer.style.display === 'block') {
+      startMic();
+    }
+  }
+});
+
+// Handle focus/blur
+window.addEventListener('focus', () => {
+  isAppVisible = true;
+  console.log('App focused');
+  if (isMotionDetectionActive) {
+    startMotionDetection();
+  }
+  if (qrContainer.style.display === 'block') {
+    startMic();
+  }
+});
+
+window.addEventListener('blur', () => {
+  isAppVisible = false;
+  console.log('App blurred');
+  stopCamera();
+  if (micActive) {
+    recognition.stop();
+    micActive = false;
+  }
+});
+
+// Event Listeners
+orderBtn.addEventListener('click', () => {
+  isMotionDetectionActive = false;
+  orderBtn.style.display = "none";
+  qrContainer.style.display = "block";
+  speakText("మీకు డ్రింక్ కావాలా? దయచేసి ఒక రూపాయి కింద qr కోడ్ తో స్కాన్ చెయ్యండి.");
+  startMic();
+  lockScreen();
+});
+
+pressBtn.addEventListener('click', async () => {
+  pressContainer.style.display = "none";
+  await controlFlashlight('on');
+  setTimeout(async () => {
+    await controlFlashlight('off');
+    stopFlashlight();
+    orderBtn.style.display = "inline-block";
+    isMotionDetectionActive = true;
+    await releaseWakeLock();
+    if (isAppVisible) {
+      startMotionDetection();
+    }
+  }, flashDuration);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  lockScreen();
+  detectMotion();
+});
