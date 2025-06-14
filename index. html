@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tea Order - Tamil Voice</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button id="orderBtn">ఆర్డర్<br>డ్రింక్</button>
+  <div id="qrContainer" style="display:none;">
+    <p id="voiceText">మీకు డ్రింక్ కావాలా? దయచేసి ఒక రూపాయి కింద qr కోడ్ తో స్కాన్ చెయ్యండి.</p>
+    <img id="qrCode" src="https://i.postimg.cc/pX2CC4Hd/174617603013854397818385914830.jpg" alt="QR Code">
+  </div>
+  <div id="pressContainer" style="display:none;">
+    <p id="confirmText">మీ గ్లాస్‌ను ఉంచి బటన్ నొక్కండి.</p>
+    <button id="pressBtn">PRESS</button>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
