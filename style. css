@@ -1,0 +1,43 @@
+body {
+  background-color: black;
+  color: white;
+  text-align: center;
+  font-family: sans-serif;
+  padding-top: 80px;
+  margin: 0;
+  overflow: hidden;
+  user-select: none;
+}
+
+#orderBtn {
+  font-size: 60px;
+  font-weight: bold;
+  padding: 70px 60px;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  background-color: white;
+  color: orange;
+  border: 10px solid red;
+  line-height: 1.2;
+  margin-top: 60px;
+}
+
+#qrContainer img {
+  margin-top: 30px;
+  width: 600px;
+  height: 600px;
+}
+
+#pressBtn {
+  font-size: 60px;
+  font-weight: bold;
+  padding: 60px 40px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background-color: white;
+  color: black;
+  border: 10px solid orange;
+  margin-top: 100px;
+}
